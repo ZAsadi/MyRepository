@@ -1,0 +1,6 @@
+vim is an editor to create ,edit files.
+git add file_name to add files to git repository.
+git commit -a (what has been changed now)-m (the message you are associating to the change) file_name
+git push ( to push the file to the git repository)
+git pull (it will reflect the latest changes made to the git repository)
+to save a file: ESC:wq
