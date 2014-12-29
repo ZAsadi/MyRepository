@@ -5,8 +5,8 @@ $dbh_ref=DBI->connect("dbi:Pg:database=postgres",'postgres','root',{AutoCommit=>
 
 print "Wellcome!!! Our application supports four different categories of annotate relations\n";
 print"1.Multiset\n";
-print"2.Uncertain\n";
-print"3.Provenance\n";
+print"2.Provenance\n";
+print"3.Uncertain\n";
 print"4.Probabilistic\n";
 print"Please enter a digit corresponding to the relations of your interest:\n";
 
@@ -24,6 +24,8 @@ sub schema_finder_union_selection($) ;
 sub schema_finder_groupby_union($); 
 sub update_annotation_union($$$);
 sub update_annotation_projection($$$$);
+sub cond_modification($);
+sub get_question_mark($);
 
 chomp(my $type =<>);
 print"We are ready to evaluate your query.Please enter your query:\n";
@@ -154,7 +156,6 @@ sub parser($$$)
         	  my $tableName=table_generator (schema_join_finder($secondOperand,$firstOperand),"temp","join");
     
         	  initial_insertion($tableName,$joinStr);
-        	  
         	  update_annotation_join($secondOperand,$firstOperand,$type);
         	  }
         	     
@@ -177,7 +178,11 @@ sub parser($$$)
         	          when (1){
         	          $annotation="multiplicity";
         	          $annotationType="int";
-        		  print"inside switch\n";} 	
+        		  } 
+        		  when (2){
+        		  $annotation="provenance";
+        		  $annotationType="text";
+        		  }		
                   }
                   my $modifiedCondition=$condition.",".$annotation;
                   my $projectionStr= "select $modifiedCondition from $firstOperand";
@@ -188,7 +193,7 @@ sub parser($$$)
         	  $projectionQry->execute();
         	  my $projectionSchema=schema_finder($firstOperand,$condition);
         	  $projectionSchema=$projectionSchema.", ".$annotation." ".$annotationType;
-        	  print $projectionSchema;
+   
                   my $tableName=table_generator ($projectionSchema,"temp","projection");
         	  initial_insertion("temp_projection",$projectionStr);
         	  update_annotation_projection($firstOperand,$projectionSchema,$condition,$type);
@@ -285,12 +290,12 @@ sub schema_join_finder($$) {
 		$type=$list[5];
            
 		if($schema eq undef) {
-		        if ($name ne "multiplicity"){
+		        if ($name ne "multiplicity" && $name ne "provenance" ){
                         $schema=$name;
                         }
                  }
                else {
-                        if ($name ne "multiplicity"){
+                        if ($name ne "multiplicity" && $name ne "provenance" ){
                         $schema=$schema.",".$name;
                         }
                      }   
@@ -335,7 +340,6 @@ sub table_generator ($$$)
        my $tableName=$firstOperand."_".$secondOperand;
        drop_table($tableName);
        my $createStr=" create table $tableName($schema)"; 
-       print  $createStr;
        my $createQry=$dbh_ref->prepare($createStr);
        $createQry->execute();
        print"Inside Table_generator";
@@ -373,36 +377,60 @@ sub update_annotation_join($$$)
         	when (1){
         	        $annotation="multiplicity";
         		print"inside switch\n";
-        		
-        	}
-        	
+        		my $firstAnno=$firstOperand."_".$annotation;
+			my $secondAnno=$secondOperand."_".$annotation;
+			my $updateStr="update temp_join set $firstAnno=$firstAnno*$secondAnno";
+			my $updateQry=$dbh_ref->prepare($updateStr);
+			$updateQry->execute();
+			print"Inside update_annotation_join!\n";
+			my $dropClmStr="alter table temp_join drop column $secondAnno ";
+			my $dropClmSQry=$dbh_ref->prepare($dropClmStr);
+			$dropClmSQry->execute();
+			print"Inside update_annotation_join! DROP COLUMN\n";
+			my $renameClmStr="alter table temp_join rename column $firstAnno to $annotation";
+			my $renameClmSQry=$dbh_ref->prepare($renameClmStr);
+			$renameClmSQry->execute();
+        
+			print"Inside update_annotation_join!RENAME COLUMN\n";
+        
+			my $groupbySchema=schema_finder_groupby_union("temp_join");
+			my $tableName=table_generator (schema_finder_union_selection("temp_join"),$firstOperand,$secondOperand);
+			my $updateStr=" insert into $tableName ($groupbySchema,multiplicity) (select $groupbySchema,sum ($annotation) from temp_join group by $groupbySchema)";
+			print $updateStr;
+			my $updateQry=$dbh_ref->prepare($updateStr);
+			$updateQry->execute();
+			return($tableName);
+                        }
+               when (2){
+               	        $annotation="provenance";
+        		print"inside switch\n";
+        		my $firstAnno=$firstOperand."_".$annotation;
+			my $secondAnno=$secondOperand."_".$annotation;     
+        	        my $updateStr="update temp_join set $firstAnno ='('||$secondAnno||'*'||$firstAnno||')' ";
+			my $updateQry=$dbh_ref->prepare($updateStr);
+			$updateQry->execute();
+			print"Inside update_annotation_join!\n";
+			my $dropClmStr="alter table temp_join drop column $secondAnno ";
+			my $dropClmSQry=$dbh_ref->prepare($dropClmStr);
+			$dropClmSQry->execute();
+			print"Inside update_annotation_join! DROP COLUMN\n";
+			my $renameClmStr="alter table temp_join rename column $firstAnno to $annotation";
+			my $renameClmSQry=$dbh_ref->prepare($renameClmStr);
+			$renameClmSQry->execute();
+			print"Inside update_annotation_join!RENAME COLUMN\n";
+        
+			my $groupbySchema=schema_finder_groupby_union("temp_join");
+			my $tableName=table_generator (schema_finder_union_selection("temp_join"),$firstOperand,$secondOperand);
+			my $updateStr=" insert into $tableName (select * from temp_join)";
+			print $updateStr;
+			my $updateQry=$dbh_ref->prepare($updateStr);
+			$updateQry->execute();
+			return($tableName);
+                       }
         }
-        my $firstAnno=$firstOperand."_".$annotation;
-        my $secondAnno=$secondOperand."_".$annotation;
-        my $updateStr="update temp_join set $firstAnno=$firstAnno*$secondAnno";
-        my $updateQry=$dbh_ref->prepare($updateStr);
-        $updateQry->execute();
-        print"Inside update_annotation_join!\n";
-        my $dropClmStr="alter table temp_join drop column $secondAnno ";
-        my $dropClmSQry=$dbh_ref->prepare($dropClmStr);
-        $dropClmSQry->execute();
-        print"Inside update_annotation_join! DROP COLUMN\n";
-        my $renameClmStr="alter table temp_join rename column $firstAnno to $annotation";
-        my $renameClmSQry=$dbh_ref->prepare($renameClmStr);
-        $renameClmSQry->execute();
-        
-        print"Inside update_annotation_join!RENAME COLUMN\n";
-        
-        my $groupbySchema=schema_finder_groupby_union("temp_join");
-        my $tableName=table_generator (schema_finder_union_selection("temp_join"),$firstOperand,$secondOperand);
-        my $updateStr=" insert into $tableName ($groupbySchema,multiplicity) (select $groupbySchema,sum ($annotation) from temp_join group by $groupbySchema)";
-        print $updateStr;
-        my $updateQry=$dbh_ref->prepare($updateStr);
-        $updateQry->execute();
-        print"Inside update_annotation_union!\n";
-        return($tableName);
+       
      
-   }     
+ }     
         	  
 sub update_annotation_union($$$)
 {    
@@ -412,33 +440,144 @@ sub update_annotation_union($$$)
         given( $type){
         	when (1){
         	        $annotation="multiplicity";
-        		print"inside switch\n";} 	
-        }
-        my $groupbySchema=schema_finder_groupby_union($firstOperand);
-        my $tableName=table_generator (schema_finder_union_selection($firstOperand),$firstOperand,$secondOperand);
-        my $updateStr=" insert into $tableName (select $groupbySchema,sum ($annotation) from temp_union group by $groupbySchema)";
-        print $updateStr;
-        my $updateQry=$dbh_ref->prepare($updateStr);
-        $updateQry->execute();
-        print"Inside update_annotation_union!\n";
-        return($tableName);
-}
+        		print"inside switch\n";
+        		my $groupbySchema=schema_finder_groupby_union($firstOperand);
+			my $tableName=table_generator (schema_finder_union_selection($firstOperand),$firstOperand,$secondOperand);
+			my $updateStr=" insert into $tableName (select $groupbySchema,sum ($annotation) from temp_union group by $groupbySchema)";
+			print $updateStr;
+			my $updateQry=$dbh_ref->prepare($updateStr);
+			$updateQry->execute();
+			print"Inside update_annotation_union!\n";
+			return($tableName);	
+			}
+	       when (2){
+	        	$annotation="provenance";
+	        	my $groupbySchema=schema_finder_groupby_union($firstOperand);
+	        	my $tableName=table_generator (schema_finder_union_selection($firstOperand),$firstOperand,$secondOperand);
+        		my $proStr="select $groupbySchema from temp_union group by $groupbySchema";
+        		
+			my $proQry=$dbh_ref-> prepare( $proStr);
+
+                        my $modifiedCon=cond_modification($groupbySchema);
+			my $selStr="select $annotation from temp_union where $modifiedCon";
+			print "inside update annotation union\n";
+		
+			my $selQry= $dbh_ref-> prepare( $selStr);
+			
+			$proQry->execute();
+			while (@_=$proQry->fetchrow_array)
+			{
+				$selQry->execute(@_);
+				my $value=();
+	
+				while (my ($anno)=$selQry->fetchrow_array)
+				{    
+					if ($value eq undef){
+					$value="(".$anno;
+					}
+					else{
+					$value=$value."+".$anno;
+					}
+				}
+				$value=$value.")";
+				
+				my $insertionStr= "@_,$value";
+                                my $nocolumns=get_question_mark($groupbySchema);
+                                my $insertStr="insert into $tableName values ($nocolumns)";
+                                print" inside insertin part\n";
+                               
+                                my $insertQry=$dbh_ref->prepare ($insertStr);
+                                $insertQry->execute(@_,$value);
+                         
+                     }
+                     return($tableName);	
+                   }
+                } 
+  }
 
 sub update_annotation_projection($$$$)
 {    
-        my ($firstOperand,$schemaProjection,$condition,$type) = @_;
+        my ($firstOperand,$projectionSchema,$condition,$type) = @_;
         my $tableName=$firstOperand."_p";
         my $annotation=();
         given( $type){
         	when (1){
         	        $annotation="multiplicity";
-        		print"inside switch\n";} 	
+        	        my $tableName=table_generator ($projectionSchema,$firstOperand,"p");
+			my $updateStr=" insert into $tableName (select $condition,sum ($annotation) from temp_projection group by $condition)";
+			print $updateStr;
+			my $updateQry=$dbh_ref->prepare($updateStr);
+			$updateQry->execute();
+			print"Inside update_annotation_union!\n";
+			return($tableName);
+        	
+        		} 
+        	when(2){
+        	        $annotation="provenance";
+        	        my $tableName=table_generator ($projectionSchema,$firstOperand,"p");
+        	        my $proStr="select $condition from temp_projection group by $condition";
+        	        
+			my $proQry=$dbh_ref-> prepare( $proStr);
+
+                        my $modifiedCon=cond_modification($condition);
+			my $selStr="select $annotation from temp_projection where $modifiedCon";
+			
+			my $selQry= $dbh_ref-> prepare( $selStr);
+			
+			$proQry->execute();
+			while (@_=$proQry->fetchrow_array)
+			{
+				$selQry->execute(@_);
+				my $value=();
+	
+				while (my ($anno)=$selQry->fetchrow_array)
+				{    
+					if ($value eq undef){
+					$value="(".$anno;
+					}
+					else{
+					$value=$value."+".$anno;
+					}
+				}
+				$value=$value.")";
+				
+				my $insertionStr= "@_,$value";
+                                #my $insertStr= "insert into $tableName values ($insertionStr)";
+                                my $nocolumns=get_question_mark($condition);
+                                my $insertStr="insert into $tableName values ($nocolumns)";
+                                my $insertQry=$dbh_ref->prepare ($insertStr);
+                                $insertQry->execute(@_,$value);
+                         
+                     }
+                     return($tableName);		
+        }     
+  }
+}
+sub cond_modification($) {
+
+    my ($cond)=@_;
+    my @con_arr=split(',',$cond);
+    my $new_cond=();
+    $new_cond=$con_arr[0]." = ?";
+    my $modif_con=$new_cond;
+
+    for(my $k=1; $k<scalar(@con_arr);$k++) {
+        $new_cond=$con_arr[$k]." = ?" ;
+        $modif_con = $modif_con." and ".$new_cond;
         }
-        my $tableName=table_generator ($schemaProjection,$firstOperand,"p");
-        my $updateStr=" insert into $tableName (select $condition,sum ($annotation) from temp_projection group by $condition)";
-        print $updateStr;
-        my $updateQry=$dbh_ref->prepare($updateStr);
-        $updateQry->execute();
-        print"Inside update_annotation_union!\n";
-        return($tableName);
-}	        	  
+    return $modif_con;
+
+}
+sub get_question_mark($) {
+
+    my ($cond)=@_;
+    my @con_arr=split(',',$cond);
+
+    my $question = "?";
+    print scalar(@con_arr);
+
+    for(my $k=0; $k<scalar(@con_arr);$k++) {
+        $question=$question.",?";
+        }
+    return $question;
+}
