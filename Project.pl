@@ -184,7 +184,11 @@ sub parser($$$)
         		  when (2){
         		  $annotation="provenance";
         		  $annotationType="text";
-        		  }		
+        		  }
+        		  when(3){
+        		  $annotation="uncertainty";
+        		  $annotationType="text";
+        		  }			
                   }
                   my $modifiedCondition=$condition.",".$annotation;
                   my $projectionStr= "select $modifiedCondition from $firstOperand";
@@ -292,12 +296,12 @@ sub schema_join_finder($$) {
 		$type=$list[5];
            
 		if($schema eq undef) {
-		        if ($name ne "multiplicity" && $name ne "provenance" ){
+		        if ($name ne "multiplicity" && $name ne "provenance" && $name ne "uncertainty"){
                         $schema=$name;
                         }
                  }
                else {
-                        if ($name ne "multiplicity" && $name ne "provenance" ){
+                        if ($name ne "multiplicity" && $name ne "provenance" && $name ne "uncertainty"){
                         $schema=$schema.",".$name;
                         }
                      }   
@@ -363,11 +367,11 @@ sub initial_insertion($$)
 {
 	my ($tableName,$queryString) = @_;
 	my $insertStr="insert into $tableName ($queryString)";
-	print $insertStr;
 	my $insertQry=$dbh_ref->prepare($insertStr);
         $insertQry->execute();
         print"Inside initial_insertion";
 	return($tableName);
+	
 	
 }
 sub update_annotation_join($$$)
@@ -429,6 +433,33 @@ sub update_annotation_join($$$)
 			$updateQry->execute();
 			return($tableName);
                        }
+               when (3){
+               	        $annotation="uncertainty";
+        		print"inside switch\n";
+        		my $firstAnno=$firstOperand."_".$annotation;
+			my $secondAnno=$secondOperand."_".$annotation; 
+        	        my $updateStr="update temp_join set $firstAnno ='('||$secondAnno||'^'||$firstAnno ||')'";
+			my $updateQry=$dbh_ref->prepare($updateStr);
+			$updateQry->execute();
+			print"Inside update_annotation_join!\n";
+			my $dropClmStr="alter table temp_join drop column $secondAnno ";
+			my $dropClmSQry=$dbh_ref->prepare($dropClmStr);
+			$dropClmSQry->execute();
+			print"Inside update_annotation_join! DROP COLUMN\n";
+			my $renameClmStr="alter table temp_join rename column $firstAnno to $annotation";
+			my $renameClmSQry=$dbh_ref->prepare($renameClmStr);
+			$renameClmSQry->execute();
+			print"Inside update_annotation_join!RENAME COLUMN\n";
+        
+			my $groupbySchema=schema_finder_groupby_union("temp_join");
+			my $tableName=table_generator (schema_finder_union_selection("temp_join"),$firstOperand,$secondOperand);
+			my $updateStr=" insert into $tableName (select * from temp_join)";
+			print $updateStr;
+			my $updateQry=$dbh_ref->prepare($updateStr);
+			$updateQry->execute();
+			return($tableName);
+               	
+                      }        
         }
        
      
@@ -493,6 +524,47 @@ sub update_annotation_union($$$)
                      }
                      return($tableName);	
                    }
+                   when (3){
+	        	$annotation="uncertainty";
+	        	my $groupbySchema=schema_finder_groupby_union($firstOperand);
+	        	my $tableName=table_generator (schema_finder_union_selection($firstOperand),$firstOperand,$secondOperand);
+        		my $proStr="select $groupbySchema from temp_union group by $groupbySchema";
+        		
+			my $proQry=$dbh_ref-> prepare( $proStr);
+
+                        my $modifiedCon=cond_modification($groupbySchema);
+			my $selStr="select $annotation from temp_union where $modifiedCon";
+			print "inside update annotation union\n";
+		
+			my $selQry= $dbh_ref-> prepare( $selStr);
+			my $reducedVal;
+			my $finalVal;
+			$proQry->execute();
+			while (@_=$proQry->fetchrow_array)
+			{
+				$selQry->execute(@_);
+				my $value=();
+	
+				while (my ($anno)=$selQry->fetchrow_array)
+				{    
+					if ($value eq undef){
+					$value="(".$anno;
+					}
+					else{
+					$value=$value."v".$anno;
+					}
+				}
+				$value=$value.")";
+				
+                                my $nocolumns=get_question_mark($groupbySchema);
+                                my $insertStr="insert into $tableName values ($nocolumns)";
+                                print" inside insertin part\n";
+                                my $insertQry=$dbh_ref->prepare ($insertStr);
+                                $insertQry->execute(@_,$value);
+                         
+                     }
+                     return($tableName);	
+                   }
                 } 
   }
 
@@ -548,7 +620,47 @@ sub update_annotation_projection($$$$)
                          
                      }
                      return($tableName);		
-        }     
+                    } 
+                    when(3){
+        	        $annotation="uncertainty";
+        	        my $tableName=table_generator ($projectionSchema,$firstOperand,"p");
+        	        my $proStr="select $condition from temp_projection group by $condition";
+        	        
+			my $proQry=$dbh_ref-> prepare( $proStr);
+
+                        my $modifiedCon=cond_modification($condition);
+			my $selStr="select $annotation from temp_projection where $modifiedCon";
+			
+			my $selQry= $dbh_ref-> prepare( $selStr);
+			$proQry->execute();
+			
+			while (@_=$proQry->fetchrow_array)
+			{
+				$selQry->execute(@_);
+				my $value=();
+	
+				while (my ($anno)=$selQry->fetchrow_array)
+				{    
+					if ($value eq undef){
+					$value="(".$anno;
+					}
+					else{
+					$value=$value."v".$anno;
+					}
+					
+				}
+				$value=$value.")";
+                                my $nocolumns=get_question_mark($condition);
+                                my $insertStr="insert into $tableName values ($nocolumns)";
+                                my $insertQry=$dbh_ref->prepare ($insertStr);
+                                $insertQry->execute(@_,$value);
+                         
+                     }
+                     return($tableName);		
+                    } 
+                    
+                    
+                        
   }
 }
 sub cond_modification($) {
