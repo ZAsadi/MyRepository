@@ -27,6 +27,7 @@ sub update_annotation_projection($$$$);
 sub cond_modification($);
 sub get_question_mark($);
 sub annotation_reducer($);
+sub annotation_reducer_join($);
 
 chomp(my $type =<>);
 print"We are ready to evaluate your query.Please enter your query:\n";
@@ -406,8 +407,8 @@ sub update_annotation_join($$$)
                	        $annotation="provenance";
         		print"inside switch\n";
         		my $firstAnno=$firstOperand."_".$annotation;
-			my $secondAnno=$secondOperand."_".$annotation;     
-        	        my $updateStr="update temp_join set $firstAnno ='('||$secondAnno||'*'||$firstAnno||')' ";
+			my $secondAnno=$secondOperand."_".$annotation; 
+        	        my $updateStr="update temp_join set $firstAnno =($secondAnno||'*'||$firstAnno)";
 			my $updateQry=$dbh_ref->prepare($updateStr);
 			$updateQry->execute();
 			print"Inside update_annotation_join!\n";
@@ -614,6 +615,55 @@ while (my($key,$value)=each(%myhash))
 	           }
 	       default{
 	           $newValue=$newValue.'+'.$value.$key;	
+	           }   
+	           }
+            	
+            }	   
+}
+print $newValue;
+return($newValue);
+}
+
+sub annotation_reducer_join($){
+my($value)=@_;
+my @valueArray=split('\*',$value);
+my $newValue;
+my $i=0;
+my %myhash=();
+ while ( $i<scalar(@valueArray)){
+	if ($myhash{$valueArray[$i]} eq undef){
+		$myhash{$valueArray[$i]}=1;
+	}
+	else{
+		$myhash{$valueArray[$i]}=$myhash{$valueArray[$i]}+1;
+	    }	
+$i++;
+}
+while (my($key,$value)=each(%myhash))
+{
+    print $key,$value;
+    print "\n";
+    }
+
+while (my($key,$value)=each(%myhash))
+{
+	if ($newValue eq undef){
+	   given($value){
+	   	when (1){	
+	           $newValue=$key;
+	           }
+	        default{
+	           $newValue=$key.'^'.$value;	
+	           }   
+	           }
+       }
+	else{
+		given($value){
+	   	when (1){	
+	           $newValue=$newValue.'*'.$key;
+	           }
+	       default{
+	           $newValue=$newValue.'*'.$key.'^'.$value;	
 	           }   
 	           }
             	
