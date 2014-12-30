@@ -26,6 +26,7 @@ sub update_annotation_union($$$);
 sub update_annotation_projection($$$$);
 sub cond_modification($);
 sub get_question_mark($);
+sub annotation_reducer($);
 
 chomp(my $type =<>);
 print"We are ready to evaluate your query.Please enter your query:\n";
@@ -463,7 +464,8 @@ sub update_annotation_union($$$)
 			print "inside update annotation union\n";
 		
 			my $selQry= $dbh_ref-> prepare( $selStr);
-			
+			my $reducedVal;
+			my $finalVal;
 			$proQry->execute();
 			while (@_=$proQry->fetchrow_array)
 			{
@@ -473,21 +475,19 @@ sub update_annotation_union($$$)
 				while (my ($anno)=$selQry->fetchrow_array)
 				{    
 					if ($value eq undef){
-					$value="(".$anno;
+					$value=$anno;
 					}
 					else{
 					$value=$value."+".$anno;
 					}
 				}
-				$value=$value.")";
 				
-				my $insertionStr= "@_,$value";
+				$reducedVal=annotation_reducer($value);
                                 my $nocolumns=get_question_mark($groupbySchema);
                                 my $insertStr="insert into $tableName values ($nocolumns)";
                                 print" inside insertin part\n";
-                               
                                 my $insertQry=$dbh_ref->prepare ($insertStr);
-                                $insertQry->execute(@_,$value);
+                                $insertQry->execute(@_,$reducedVal);
                          
                      }
                      return($tableName);	
@@ -523,8 +523,8 @@ sub update_annotation_projection($$$$)
 			my $selStr="select $annotation from temp_projection where $modifiedCon";
 			
 			my $selQry= $dbh_ref-> prepare( $selStr);
-			
 			$proQry->execute();
+			my $reducedVal;
 			while (@_=$proQry->fetchrow_array)
 			{
 				$selQry->execute(@_);
@@ -533,20 +533,17 @@ sub update_annotation_projection($$$$)
 				while (my ($anno)=$selQry->fetchrow_array)
 				{    
 					if ($value eq undef){
-					$value="(".$anno;
+					$value=$anno;
 					}
 					else{
 					$value=$value."+".$anno;
 					}
 				}
-				$value=$value.")";
-				
-				my $insertionStr= "@_,$value";
-                                #my $insertStr= "insert into $tableName values ($insertionStr)";
+				$reducedVal=annotation_reducer($value);
                                 my $nocolumns=get_question_mark($condition);
                                 my $insertStr="insert into $tableName values ($nocolumns)";
                                 my $insertQry=$dbh_ref->prepare ($insertStr);
-                                $insertQry->execute(@_,$value);
+                                $insertQry->execute(@_,$reducedVal);
                          
                      }
                      return($tableName);		
@@ -580,4 +577,48 @@ sub get_question_mark($) {
         $question=$question.",?";
         }
     return $question;
+}
+
+sub annotation_reducer($){
+my($value)=@_;
+my @valueArray=split('\+',$value);
+my $newValue;
+my $i=0;
+my %myhash=();
+ while ( $i<scalar(@valueArray)){
+	if ($myhash{$valueArray[$i]} eq undef){
+		$myhash{$valueArray[$i]}=1;
+	}
+	else{
+		$myhash{$valueArray[$i]}=$myhash{$valueArray[$i]}+1;
+	    }	
+$i++;
+}
+    
+while (my($key,$value)=each(%myhash))
+{
+	if ($newValue eq undef){
+	   given($value){
+	   	when (1){	
+	           $newValue=$key;
+	           }
+	        default{
+	           $newValue=$value.$key;	
+	           }   
+	           }
+       }
+	else{
+		given($value){
+	   	when (1){	
+	           $newValue=$newValue.'+'.$key;
+	           }
+	       default{
+	           $newValue=$newValue.'+'.$value.$key;	
+	           }   
+	           }
+            	
+            }	   
+}
+print $newValue;
+return($newValue);
 }
