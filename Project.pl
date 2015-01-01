@@ -438,7 +438,9 @@ sub update_annotation_join($$$)
         		print"inside switch\n";
         		my $firstAnno=$firstOperand."_".$annotation;
 			my $secondAnno=$secondOperand."_".$annotation; 
-        	        my $updateStr="update temp_join set $firstAnno ='('||$secondAnno||'^'||$firstAnno ||')'";
+			
+			
+        	        my $updateStr="update temp_join set $firstAnno =($secondAnno||'^'|| $firstAnno)";
 			my $updateQry=$dbh_ref->prepare($updateStr);
 			$updateQry->execute();
 			print"Inside update_annotation_join!\n";
@@ -632,6 +634,7 @@ sub update_annotation_projection($$$$)
 			my $selStr="select $annotation from temp_projection where $modifiedCon";
 			
 			my $selQry= $dbh_ref-> prepare( $selStr);
+		
 			$proQry->execute();
 			
 			while (@_=$proQry->fetchrow_array)
@@ -738,6 +741,7 @@ return($newValue);
 
 sub annotation_reducer_join($){
 my($value)=@_;
+
 my @valueArray=split('\*',$value);
 my $newValue;
 my $i=0;
