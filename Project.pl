@@ -255,13 +255,11 @@ sub parser($$$)
                   	given($type){
         	  		when(4){
         	  			  print "inside union-probabilistic";
-        	  			  my $operand2=schema_finder_groupby_union($secondOperand);
-        	  			  my $operand1=schema_finder_groupby_union($firstOperand);
+        	  			  my $operand2=schema_finder_groupby_union_p($secondOperand);
+        	  			  my $operand1=schema_finder_groupby_union_p($firstOperand);
 					  my $unionStr="(select $operand1 from $firstOperand) union (select $operand2 from $secondOperand)";
 					  print $unionStr;
-					  
-					  +
-					   #exit 0;
+					  #exit 1;
 					  my $unionQry=$dbh_ref->prepare($unionStr);
 					  $unionQry->execute();
 					  my $tableName=table_generator (schema_finder_union_selection($secondOperand),"temp","union");
@@ -320,11 +318,14 @@ sub parser($$$)
                   }
                   
                   when ("s" ){
-                  my $selectStr= "select * from $firstOperand where $condition";
+                  my $updatedSchema=schema_finder_groupby_union_p($firstOperand);
+                  my $selectStr= "select $updatedSchema from $firstOperand where $condition";
                   #print "$selectStr\n";
                   my $selectQry=$dbh_ref->prepare($selectStr);
         	  $selectQry->execute();
         	  my $tableName=table_generator (schema_finder_union_selection($firstOperand),"$firstOperand","s");
+        	  # print $tableName;
+        	  # exit 0;
         	  initial_insertion($tableName,$selectStr);
         	 
         	  
@@ -369,6 +370,8 @@ sub schema_join_finder($$) {
         #print " $schema,inside schema_join_finder";
 	return $schema ;
 	} 
+
+
 	
 #This subroutine finds the schema of the result of union and selection	
  sub schema_finder_union_selection($) 
@@ -385,11 +388,11 @@ sub schema_join_finder($$) {
 		$name=$list[3];
 		$type=$list[5];
            
-		if($schema eq undef && $name ne 'value') {
+		if($schema eq undef && $name ne 'probability') {
                         $schema=$name." ".$type;
                     }
                else {
-               	     if($name ne 'value'){
+               	     if($name ne 'probability'){
                         $schema=$schema.",".$name." ".$type;
                         }
                     }
@@ -414,12 +417,42 @@ sub schema_join_finder($$) {
 		$type=$list[5];
            
 		if($schema eq undef) {
-		        if ($name ne "multiplicity" && $name ne "provenance" && $name ne "uncertainty" && $name && $name ne "probability"){
+		        if ($name ne "multiplicity" && $name ne "provenance" && $name ne "uncertainty"  && $name ne "probability" && $name ne "ev"){
                         $schema=$name;
                         }
                  }
                else {
-                        if ($name ne "multiplicity" && $name ne "provenance" && $name ne "uncertainty"&& $name  && $name ne "probability"){
+                        if ($name ne "multiplicity" && $name ne "provenance" && $name ne "uncertainty" && $name ne "probability" && $name ne "ev"){
+                        $schema=$schema.",".$name;
+                        }
+                     }   
+         }
+        #print $schema;
+	return $schema;	
+}
+
+
+sub schema_finder_groupby_union_p($) 
+ {
+	my ($table) = @_;
+	my $schema=();
+	#my @con_arr=split(',',$cond);
+	my $sth_column_info = $dbh_ref->column_info( '', '%', $table , undef );
+	my $aoa_ref = $sth_column_info->fetchall_arrayref; # <- chg. to arrayref, no parms
+
+	for my $aref (@$aoa_ref) {
+		my($name,$type)=0;
+		my @list = map $_ // 'undef', @$aref;
+		$name=$list[3];
+		$type=$list[5];
+           
+		if($schema eq undef) {
+		        if ($name ne "multiplicity" && $name ne "provenance" && $name ne "uncertainty"  && $name ne "probability"){
+                        $schema=$name;
+                        }
+                 }
+               else {
+                        if ($name ne "multiplicity" && $name ne "provenance" && $name ne "uncertainty" && $name ne "probability" ){
                         $schema=$schema.",".$name;
                         }
                      }   
@@ -464,8 +497,8 @@ sub table_generator ($$$)
        my $tableName=$firstOperand."_".$secondOperand;
        drop_table($tableName);
        my $createStr=" create table $tableName($schema)"; 
-       #print $createStr;
-       #exit 0;
+       # print $createStr;
+       # exit 0;
        my $createQry=$dbh_ref->prepare($createStr);
        $createQry->execute();
        print"Inside Table_generator";
@@ -732,14 +765,18 @@ sub update_annotation_union($$$)
 	        	my $groupbySchema=schema_finder_groupby_union($firstOperand);
 	        	my $tableName=table_generator (schema_finder_union_selection($firstOperand),$firstOperand,$secondOperand);
         		my $proStr="select $groupbySchema from temp_union group by $groupbySchema";
-        		print $proStr;
+        		# print $proStr;
+        		# exit 0;
         		
 			my $proQry=$dbh_ref-> prepare( $proStr);
 
                         my $modifiedCon=cond_modification($groupbySchema);
+                        print $modifiedCon;
+                       
+                        
 			my $selStr="select $annotation from temp_union where $modifiedCon";
-			#print "inside update annotation union\n";
-		
+			print $selStr;
+			#exit 0;
 			my $selQry= $dbh_ref-> prepare( $selStr);
 			my $reducedVal;
 			my $finalVal;
@@ -763,6 +800,7 @@ sub update_annotation_union($$$)
                                 my $nocolumns=get_question_mark($groupbySchema);
                                 my $insertStr="insert into $tableName values ($nocolumns)";
                                 #print" inside insertin part\n";
+                                #exit 0;
                                 my $insertQry=$dbh_ref->prepare ($insertStr);
                                 $insertQry->execute(@_,$value);
                          
